@@ -173,7 +173,9 @@ def call_back_query(call):
         markup.add(InlineKeyboardButton('خروج ✔️', callback_data='nothing'))
         bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton('⭐⭐⭐',callback_data='rate_3'),
+        markup.add(InlineKeyboardButton('⭐⭐⭐⭐⭐',callback_data='rate_5'),
+                   InlineKeyboardButton('⭐⭐⭐⭐',callback_data='rate_4'),
+                   InlineKeyboardButton('⭐⭐⭐',callback_data='rate_3'),
                    InlineKeyboardButton('⭐⭐',callback_data='rate_2'),
                    InlineKeyboardButton('⭐',callback_data='rate_1'))
         send_message(cid,f"*{clean_word(texts['end'])}*", parse_mode = "markdownV2",reply_markup=markup)
