@@ -1,4 +1,4 @@
-#version 1.1.0
+#version 1.2.0
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from telebot.util import antiflood
@@ -13,6 +13,9 @@ score_limit = 30
 lower_limit = 0.5
 upper_limit = 2
 spam_time = 5*60
+
+file_info = dict() # {cid:message_id}
+user_steps = dict() # {cid:"A",}
 
 def listener(messages):
     for m in messages:
@@ -190,17 +193,19 @@ def call_back_query(call):
         markup.add(InlineKeyboardButton(f"{'⭐'*int(rate)}✔️", callback_data='nothing'))
         bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
         send_message(SUPPORT_CID,f"""
-        ثبت نظر جدید:
-        امتیاز:{rate}
-        از طرف: @{username}
-                         """)
+ثبت نظر جدید
+امتیاز:{rate}
+از طرف:
+https://t.me/{username}""")
+        
         send_message(cid,f"*{clean_word(texts['thanks'])}*",parse_mode ="markdownv2")   
         
     elif data == 'contact_consultant':
         bot.answer_callback_query(call_id,"درخواست ارتباط با مشاور✅")
+        user_steps[cid] = "A"
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton('بازگشت⬅️',callback_data='support_menu'))
-        edit_message_text (clean_word(texts['consultant_link']),cid,mid, parse_mode = "markdownV2",reply_markup=markup)
+        bot.edit_message_text('*جهت مشاوره لطفا فایل قرارداد را بفرستید*',cid,mid, parse_mode="markdownv2",reply_markup=markup)
         
     elif data == 'support':
         bot.answer_callback_query(call_id,"درخواست پشتیبانی✅")
@@ -217,11 +222,29 @@ def call_back_query(call):
                    InlineKeyboardButton('پشتیبانی🧑‍💻',callback_data='support'))
         edit_message_text('پشتیبانی یا مشاوره؟',cid,mid,reply_markup =markup)
         
+    elif data == 'confirm_send':
+        user_info = bot.get_chat(cid)
+        username = user_info.username
+        bot.answer_callback_query(call_id,"تایید ارسال فایل")
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(f"تایید و ارسال✔️", callback_data='nothing'))
+        bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
+        
+        link_sender =f'ارتباط با :[کاربر متقاضی دریافت مشاوره](tg://user?id={cid})'
+        bot.copy_message(SUPPORT_CID,cid,file_info[cid],
+                         caption=f'''فایل ارسال شده جهت مشاوره از سوی کاربر
+ {link_sender}''',parse_mode="markdownv2")
+        
     elif data == 'nothing':
         bot.answer_callback_query(call_id, 'فاقد عملیات!')
         
     elif data == 'cancel':
         bot.answer_callback_query(call_id, 'لغو مشاوره')
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(f"لغو مشاوره✔️", callback_data='nothing'))
+        msg=bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
+        Mid = msg.message_id
+        bot.delete_message(cid,Mid)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -280,8 +303,25 @@ def about_bot_handler(message):
     mtime = message.date
     if not user_exist(cid): return
     if is_spam_user(cid ,mtime): return
-    send_message(cid , f'*{clean_word(texts['about_txt'])}*',parse_mode="markdownv2")                      
-               
+    send_message(cid , f'*{clean_word(texts['about_txt'])}*',parse_mode="markdownv2")  
+    
+@bot.message_handler(content_types=['document', 'photo'])
+def file_handler(message):
+    cid = message.chat.id  
+    mid = message.message_id       
+    file_info[cid] = mid
+    if user_steps.get(cid) == 'A':
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("تایید و ارسال", callback_data="confirm_send"),
+                InlineKeyboardButton("لغو مشاوره", callback_data="cancel"))
+        if message.content_type == 'document':
+            file_id = message.document.file_id
+            bot.send_document(cid,file_id,caption=f"ارتباط با مشاور: {clean_word(texts['consultant_link'])}",parse_mode="markdownv2",reply_markup=markup)     
+        elif message.content_type == 'photo':     
+            file_id = message.photo[-1].file_id
+            bot.send_photo(cid,file_id,caption=f"ارتباط با مشاور: {clean_word(texts['consultant_link'])}",parse_mode="markdownv2",reply_markup=markup) 
+        user_steps.pop(cid)          
+
 @bot.message_handler(func=lambda message: True)
 def echo_message(message):
     if message.text:
