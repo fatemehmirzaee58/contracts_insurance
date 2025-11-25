@@ -1,5 +1,3 @@
-#version 1.0.0
-
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from telebot.util import antiflood
@@ -10,9 +8,9 @@ from DML import *
 from DQL import *
 
 bot = telebot.TeleBot(API_TOKEN)
-score_limit = 20
-lower_limit = 2
-upper_limit = 5
+score_limit = 30
+lower_limit = 0.5
+upper_limit = 2
 spam_time = 5*60
 
 def listener(messages):
@@ -55,31 +53,19 @@ def is_spam_user(cid,msg_time):
         score = user_in_database(cid).get('SCORE')
         print(last_time,score)
 
-        if (msg_time-last_time) <= lower_limit:
+        if (msg_time-last_time) < lower_limit:
             score += 1
             update_user_data(cid,time.time(),score)
-            if score >= score_limit:
+            if score > score_limit:
                 set_is_spam(cid,True)
                 return True
             return False      
-        elif (msg_time-last_time)>upper_limit:
+        elif (msg_time-last_time) >= upper_limit:
             score = max (score-1 , 0)
             update_user_data(cid,time.time(),score)
-            if score>score_limit:
-                set_is_spam(cid,True)
-                return True
             return False
     else: return False
     
-def main_worker():
-    while True:
-        if spam_list():
-            for user in spam_list():
-                cid=user['CHAT_ID']
-                last_time = user(cid).get('LAST_MSG_TIME')
-                if time.time()-last_time > spam_time:
-                    set_is_spam(cid,False)
-        time.sleep(60)
     
 def clean_word(string):
     if string:
@@ -99,7 +85,33 @@ def send_question_n_options(cid,qid):
     if qid!=1:
         markup.add(InlineKeyboardButton(texts['back'], callback_data='back'))
     send_message(cid,f"♦️ *{clean_word(question['Q_TEXT'])}* ❓",
-                     parse_mode="markdownv2", reply_markup=markup)       
+                     parse_mode="markdownv2", reply_markup=markup)     
+
+def result_menu(cid,ans_id):
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton(texts['back'],callback_data='back'),
+        InlineKeyboardButton('تایید اطلاعات و نمایش نتیجه',callback_data=f"result_{ans_id} "))
+    send_message(cid,f'*{clean_word(texts['result_menu'])}*',parse_mode="markdownv2", reply_markup=markup)
+
+def send_result(cid,mid,ans_id,call_id):
+    result = get_insurance_result(ans_id)
+    if result:
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton('خروج',callback_data='end_n_poll'),
+                   InlineKeyboardButton('شروع مجدد تعیین ضریب',callback_data='re_calculate'))
+        edit_message_text(f"✅*نتیجه:*\n *{clean_word(result['RES_TEXT'])}*",
+                          cid,mid,parse_mode="markdownv2",reply_markup= markup)
+        clean_messages(cid)
+        delete_User_Choices(cid)
+    else:
+        bot.answer_callback_query(call_id,"⚠️نتیجه ای یافت نشد")
+        
+def clean_messages(cid):
+    ans_list = get_user_answers_data(cid)
+    for m in ans_list:
+        mid = m['MID']
+        bot.delete_message(cid,mid)
+              
     
 @bot.callback_query_handler(func=lambda call:True)
 def call_back_query(call):
@@ -110,11 +122,14 @@ def call_back_query(call):
     mtime = call.message.date
     if not user_exist(cid) : return
     if is_spam_user(cid ,mtime): return
+    
     if data == 'back':
         bot.answer_callback_query(call_id,"بازگشت به مرحله قبل ✅")
-        bot.edit_message_reply_markup(cid, mid, reply_markup=None)
+        bot.delete_message(cid,mid)
         previous = bacK_to_previous(cid)
         if previous:
+            pre_mid = previous['MID']
+            bot.delete_message(cid,pre_mid)
             qid = previous['QUESTION_ID']
             send_question_n_options(cid,qid)
             delete_last_UserAnswers(cid, previous["ID"])
@@ -127,40 +142,76 @@ def call_back_query(call):
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton(f'{get_ans_data(ans_id)['OPTION_TEXT']} ✔', callback_data='nothing'))
         bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
-        insert_user_answers_data(cid,qid,ans_id)
+        insert_user_answers_data(cid,mid,qid,ans_id)
         ans = get_ans_data(ans_id)
         if ans['IS_FINAL']:
-            result = get_insurance_result(ans_id)
-            if result:
-                send_message(cid,f"✅*نتیجه:*\n *{clean_word(result['RES_TEXT'])}*",
-                                        parse_mode="markdownv2")
-                delete_UserAnswers_data(cid)
-            else:
-                bot.answer_callback_query(call_id,"⚠️نتیجه ای یافت نشد")
+            result_menu(cid,ans_id)
         else:
             next_qid = ans["NEXT_QUESTION_ID"]
             if next_qid:
                 send_question_n_options(cid,next_qid)
             else:
                 bot.answer_callback_query(call_id,"⚠️سوال بعدی یافت نشد")
+                
+    elif data.startswith('result'):
+        bot.answer_callback_query(call_id,"انتخاب گزینه انجام شد✅")
+        _,ans = data.split('_')
+        ans_id = int(ans)
+        send_result(cid,mid,ans_id,call_id)
+        
+    elif data == 're_calculate':
+        bot.answer_callback_query(call_id,"انتخاب گزینه انجام شد✅")
+        print(call)
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton('شروع مجدد تعیین ضریب✔️', callback_data='nothing'))
+        bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
+        send_question_n_options(cid,1)  
+        
+    elif data == 'end_n_poll':
+        bot.answer_callback_query(call_id,"انتخاب گزینه انجام شد✅")
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton('خروج ✔️', callback_data='nothing'))
+        bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton('⭐⭐⭐',callback_data='rate_3'),
+                   InlineKeyboardButton('⭐⭐',callback_data='rate_2'),
+                   InlineKeyboardButton('⭐',callback_data='rate_1'))
+        send_message(cid,f"*{clean_word(texts['end'])}*", parse_mode = "markdownV2",reply_markup=markup)
+    
+    elif data.startswith('rate_'):
+        bot.answer_callback_query(call_id, "امتیاز ثبت شد ✔️")
+        user_info = bot.get_chat(cid)
+        username = user_info.username
+        _,rate=data.split('_')
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(f"{'⭐'*int(rate)}✔️", callback_data='nothing'))
+        bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
+        send_message(SUPPORT_CID,f"""
+        ثبت نظر جدید:
+        امتیاز:{rate}
+        از طرف: @{username}
+                         """)
+        send_message(cid,f"*{clean_word(texts['thanks'])}*",parse_mode ="markdownv2")   
         
     elif data == 'contact_consultant':
         bot.answer_callback_query(call_id,"درخواست ارتباط با مشاور✅")
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton('بازگشت⬅️',callback_data='support_menu'))
-        edit_message_text (clean_word(texts['consultant_link']),cid,mid, parse_mode = "MarkdownV2",reply_markup=markup)
+        edit_message_text (clean_word(texts['consultant_link']),cid,mid, parse_mode = "markdownV2",reply_markup=markup)
         
     elif data == 'support':
         bot.answer_callback_query(call_id,"درخواست پشتیبانی✅")
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton('بازگشت⬅️',callback_data='support_menu'))
-        edit_message_text (f"{texts['support_link']}",cid,mid, parse_mode = "MarkdownV2",reply_markup=markup)
+        support_link =f'ارتباط با [پشتیبانی](tg://user?id={SUPPORT_CID})'
+        edit_message_text (support_link,cid,mid, parse_mode = "markdownV2",reply_markup=markup)
 
     elif data == 'support_menu':
         bot.answer_callback_query(call_id,"بازگشت به مرحله قبل ✅")
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton('ارسال قرارداد و دریافت مشاوره✍️',callback_data='contact_consultant'),
-                   InlineKeyboardButton('پشتیبانی🧑‍💻', callback_data='support'))
+        markup.add(InlineKeyboardButton('ارسال قرارداد و دریافت مشاوره✍️',
+                                        callback_data= 'contact_consultant'),
+                   InlineKeyboardButton('پشتیبانی🧑‍💻',callback_data='support'))
         edit_message_text('پشتیبانی یا مشاوره؟',cid,mid,reply_markup =markup)
         
     elif data == 'nothing':
@@ -207,7 +258,7 @@ def contact_us_handler(message):
     mtime = message.date
     if not user_exist(cid): return
     if is_spam_user(cid ,mtime): return
-    send_message(cid,f"*{clean_word(texts['contact_txt'])}*" , parse_mode="MarkdownV2")  
+    send_message(cid,f"*{clean_word(texts['contact_txt'])}*" , parse_mode="markdownV2")  
     
 @bot.message_handler(func=lambda m: m.text == texts['support'])
 def support_handler(message):
@@ -226,7 +277,7 @@ def about_bot_handler(message):
     mtime = message.date
     if not user_exist(cid): return
     if is_spam_user(cid ,mtime): return
-    send_message(cid , f'*{clean_word(texts['about_txt'])}*',parse_mode = "markdownv2")                      
+    send_message(cid , f'*{clean_word(texts['about_txt'])}*',parse_mode="markdownv2")                      
                
 @bot.message_handler(func=lambda message: True)
 def echo_message(message):

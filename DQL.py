@@ -38,7 +38,7 @@ def bacK_to_previous(cid):
     conn = mysql.connector.MySQLConnection(**db_config)
     curr = conn.cursor(dictionary=True) 
     try:
-        curr.execute("""SELECT ID, QUESTION_ID, OPTION_ID FROM USER_ANSWERS 
+        curr.execute("""SELECT * FROM USER_ANSWERS 
                      WHERE CID = %s ORDER BY ID DESC LIMIT 1 """,(cid,))
         previous = curr.fetchone()
         if not previous:
@@ -98,8 +98,17 @@ def delete_last_UserAnswers(cid,ID):
     conn.commit()
     curr.close()
     conn.close()
+
+def get_user_answers_data(cid):
+    conn = mysql.connector.MySQLConnection(**db_config)
+    curr = conn.cursor(dictionary=True)
+    curr.execute("SELECT * FROM USER_ANSWERS WHERE CID= %s",(cid,))
+    res = curr.fetchall()
+    curr.close()
+    conn.close()
+    return res
     
-def delete_UserAnswers_data(cid):
+def delete_User_Choices(cid):
     conn = mysql.connector.MySQLConnection(**db_config)
     curr = conn.cursor()
     curr.execute("DELETE FROM USER_ANSWERS WHERE CID=%s",(cid,))
