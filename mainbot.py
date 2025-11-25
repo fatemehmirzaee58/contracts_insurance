@@ -1,3 +1,5 @@
+#version 1.0.0
+
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from telebot.util import antiflood
