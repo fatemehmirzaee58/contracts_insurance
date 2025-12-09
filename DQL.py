@@ -114,4 +114,24 @@ def delete_User_Choices(cid):
     curr.execute("DELETE FROM USER_ANSWERS WHERE CID=%s",(cid,))
     conn.commit()
     curr.close()
-    conn.close()   
+    conn.close() 
+    
+def get_file_info(cid):
+    conn = mysql.connector.MySQLConnection(**db_config)
+    curr = conn.cursor(dictionary=True)
+    curr.execute("SELECT * FROM FILE_INFO WHERE CID = %s",(cid,))
+    res = curr.fetchall()
+    curr.close()
+    conn.close() 
+    return res
+
+def delete_file_after_sending(cid):
+    conn = mysql.connector.MySQLConnection(**db_config)
+    curr = conn.cursor()
+    curr.execute("DELETE FROM FILE_INFO WHERE CID=%s",(cid,))
+    conn.commit()
+    curr.close()
+    conn.close() 
+    
+
+      
