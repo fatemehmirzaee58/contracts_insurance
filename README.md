@@ -85,7 +85,7 @@ pip install pyTelegramBotAPI
 ### 4️⃣ اجرای ربات
 
 ```
-python mainbot.py
+python main.py
 ```
 
 ربات شروع به کار می‌کند و آماده پاسخگویی است.
