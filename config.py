@@ -1,9 +1,9 @@
 import os
 
 db_config = {
-    'user':os.environ.get('db_user','root'), 
-    'password':os.environ.get('db_password','password'), 
-    'host':os.environ.get('db_host','localhost'), 
+    'user':os.environ.get('db_user'), 
+    'password':os.environ.get('db_password'), 
+    'host':os.environ.get('db_host'), 
     'database':os.environ.get('database_name')
 }
 
