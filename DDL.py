@@ -169,7 +169,6 @@ if __name__ == '__main__':
 
     from DML import *
 
-    
 #بخش عمرانی
     insert_question_data(' نوع قرارداد ')#q1
     insert_question_data(' سطح قرارداد ')#q2

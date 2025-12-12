@@ -1,7 +1,8 @@
-#version 1.3.0
+#version 1.4.0
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from telebot.util import antiflood
+import threading
 import logging
 import time
 from text import texts
@@ -14,13 +15,13 @@ logging.basicConfig(filename='main.log',
                     format="%(asctime)s - %(levelname)s - %(message)s")
 
 bot = telebot.TeleBot(API_TOKEN)
-score_limit = 30
-lower_limit = 0.5
-upper_limit = 2
-spam_time = 30*60
+score_limit = 20    #حداقل امتیازی که باهاش ربات اسپم تشخیص داده میشه
+lower_limit = 1     #حداقل زمان برای اضافه شدن به score 
+upper_limit = 5     #حداکثر زمان برای کسر شدن از score  
+spam_time = 30*60   # زمان انتظار برای خروج از اسپم 
 
 user_steps = dict() # {cid:"A",}
-info_msg_bot = dict() # {cid:[mid]}
+info_msg_bot = dict() # {cid:[mid]}  #این متغیر برای پاک کردن پبام های ربات در صورت ارسال  بیش از یک فایل برای مشاور نیاز است 
 
 def listener(messages):
     for m in messages:
@@ -62,20 +63,16 @@ def answer_callback_query(*args,**kwargs):
     except Exception as e:
         logging.error(f"Error occured: {repr(e)}",exc_info=True)            
         
-def user_exist(cid):
+def user_exist(cid):  # در این تابع وجود کاربر در دیتابیس بررسی و در صورت عدم وجود ثبت میشود 
     if not user_in_database(cid):
         user_info = bot.get_chat(cid)
         insert_user_data(cid, user_info.first_name, user_info.username,time.time()) 
         logging.info(f'user {user_info.first_name} by cid {cid} inserted in database successfully')   
     return True
         
-def is_spam_user(cid,msg_time):
+def is_spam_user(cid,msg_time): # در این تابع اسپم بودن هر پیام کنترل میشود
     if  check_is_spam(cid):
-        last_time = user_in_database(cid).get('LAST_MSG_TIME')
-        if time.time()-last_time > spam_time:
-            set_is_spam(cid,False)
-            return False
-        logging.info(f'user by cid {cid} add to spam list')
+        logging.info(f'user by cid {cid} is in spam list')
         return True
     if user_in_database(cid):
         last_time = user_in_database(cid).get('LAST_MSG_TIME')
@@ -95,6 +92,16 @@ def is_spam_user(cid,msg_time):
             return False
     else: return False
     
+def worker(): #در این تابع هر 60 ثانیه لیست کاربران اسپم در دیتابیس کنترل میشود که اگر زمان انتظار اسپم بودن آنها سپری شده از حالت اسپم خارج شوند 
+    while True:
+        spam = spam_list()    
+        for user in spam:
+            cid = user['CHAT_ID']
+            last_time = user['LAST_MSG_TIME']
+            if time.time()-last_time > spam_time:
+                set_is_spam(cid,False)
+        time.sleep(60)
+         
     
 def clean_word(string):
     try:
@@ -107,7 +114,7 @@ def clean_word(string):
     except Exception as e:
           logging.error(f"Error occured in clean_word function: {repr(e)}",exc_info=True)  
 
-def send_question_n_options(cid,qid):
+def send_question_n_options(cid,qid): # با صدا زدن این تابع، مجموعه سوال و پاسخهای مرتبط نمایش داده میشود   
     question = get_question(qid)
     answer = get_options(qid)   
     markup = InlineKeyboardMarkup()
@@ -120,18 +127,18 @@ def send_question_n_options(cid,qid):
                      parse_mode="MarkdownV2", reply_markup=markup)   
   
 
-def result_menu(cid,ans_id):
+def result_menu(cid,ans_id):    #در صورتیکه ستون Is final در دیتابیس True باشه این تابع صدا زده میشه
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(texts['back'],callback_data='back'),
         InlineKeyboardButton('تایید اطلاعات و نمایش نتیجه',callback_data=f"result_{ans_id} "))
     send_message(cid,f'*{clean_word(texts['result_menu'])}*',parse_mode="MarkdownV2", reply_markup=markup)
 
 
-def send_result(cid,mid,ans_id,call_id):
+def send_result(cid,mid,ans_id,call_id):    # این تابع با تایید اطلاعات برای نمایش نتیجه استفاده میشه 
     result = get_insurance_result(ans_id)
     if result:
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton('خروج',callback_data='end_n_poll'),
+        markup.add(InlineKeyboardButton('خروج و ثبت میزان رضایت',callback_data='end_n_poll'),
                    InlineKeyboardButton('شروع مجدد تعیین ضریب',callback_data='re_calculate'))
         edit_message_text(f"✅*نتیجه:*\n *{clean_word(result['RES_TEXT'])}*",
                           cid,mid,parse_mode="MarkdownV2",reply_markup= markup)
@@ -141,13 +148,13 @@ def send_result(cid,mid,ans_id,call_id):
         answer_callback_query(call_id,"⚠️نتیجه ای یافت نشد") 
         logging.warning(f' no result for answer Id = {ans_id}') 
         
-def clean_messages(cid):
+def clean_messages(cid):    #  تابع پاک کردن مسیجهای مرتبط با گزینه های انتخابی کاربر پس از نمایش نتیجه 
     ans_list = get_user_answers_data(cid)
     for m in ans_list:
         mid = m['MID']
         delete_message(cid,mid)
         
-def send_files_to_consultant(cid,markup):
+def send_files_to_consultant(cid,markup):   #  در صورتیکه بیش از یک فایل به مشاور ارسال شود پیامهای ارسال شده قبلی حذف میشود
     if not info_msg_bot:
         msg = send_message(cid,f"ارسال فایل/فایلها و ارتباط با مشاور: {clean_word(texts['consultant_link'])}",
                            parse_mode="MarkdownV2",reply_markup=markup)
@@ -173,7 +180,7 @@ def call_back_query(call):
     if not user_exist(cid) : return
     if is_spam_user(cid ,mtime): return
     
-    if data == 'back':
+    if data == 'back':      #در صورت فشردن دکمه بازگشت به مرحله قبلی پیام فعلی پاک شده واطلاعات انتخاب قبلی کاربراز دیتابیس استخراج و همزمان از دیتابیس حذف شده و نمایش داده میشود
         answer_callback_query(call_id,"بازگشت به مرحله قبل ✅")
         delete_message(cid,mid)
         previous = bacK_to_previous(cid)
@@ -184,7 +191,7 @@ def call_back_query(call):
             send_question_n_options(cid,qid)
             delete_last_UserAnswers(cid, previous["ID"])
             
-    elif data.startswith('options'):
+    elif data.startswith('options'):  #در مجموعه پرسش و پاسخها، پاسخ انتخابی کاربر در دیتابیس ثبت و پرسش بعدی در صورت وجود نمایش داده میشود و اگر آخرین سوال باشه تابع نمایش نتیجه صدا زده میشه 
         answer_callback_query(call_id,"انتخاب گزینه انجام شد✅")
         _,q,ans = data.split('_')
         ans_id = int(ans)
@@ -204,7 +211,7 @@ def call_back_query(call):
                 answer_callback_query(call_id,"⚠️سوال بعدی یافت نشد")
                 logging.warning(f' There is no question for answer Id {ans_id}') 
                 
-    elif data.startswith('result'):
+    elif data.startswith('result'): 
         answer_callback_query(call_id,"انتخاب گزینه انجام شد✅")
         _,ans = data.split('_')
         ans_id = int(ans)
@@ -221,7 +228,7 @@ def call_back_query(call):
         answer_callback_query(call_id,"انتخاب گزینه انجام شد✅")
         
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton('خروج ✔️', callback_data='nothing'))
+        markup.add(InlineKeyboardButton('خروج و ثبت میزان رضایت ✔️', callback_data='nothing'))
         edit_message_reply_markup(cid, mid, reply_markup=markup)
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton('⭐⭐⭐⭐⭐',callback_data='rate_5'),
@@ -253,14 +260,8 @@ tg://user?id={cid}""")
         edit_message_text('*جهت مشاوره لطفا کلیه فایلهای قرارداد را بارگذاری و سپس دکمه تایید و ارسال را انتخاب کنید*',
                           cid,mid, parse_mode="MarkdownV2",reply_markup=markup)
         
-    elif data == 'support':
-        answer_callback_query(call_id,"درخواست پشتیبانی✅")
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton('بازگشت⬅️',callback_data='support_menu'))
-        support_link =f'ارتباط با [پشتیبانی](tg://user?id={SUPPORT_CID})'
-        edit_message_text (support_link,cid,mid, parse_mode = "MarkdownV2",reply_markup=markup)
 
-    elif data == 'support_menu':
+    elif data == 'support_menu': 
         answer_callback_query(call_id,"بازگشت به مرحله قبل ✅")
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton('ارسال قرارداد و دریافت مشاوره✍️',
@@ -268,7 +269,7 @@ tg://user?id={cid}""")
                    InlineKeyboardButton('پشتیبانی🧑‍💻',url=texts['consultant_link']))
         edit_message_text('پشتیبانی یا مشاوره؟',cid,mid,reply_markup =markup)
         
-    elif data == 'confirm_send':
+    elif data == 'confirm_send': 
         answer_callback_query(call_id,"تایید ارسال فایل")
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton(f"تایید و ارسال✔️", callback_data='nothing'))
@@ -280,7 +281,7 @@ tg://user?id={cid}""")
             bot.copy_message(SUPPORT_CID,cid,info['MID'],
                 caption=f' فایل ارسال شده جهت مشاوره از سوی کاربر{link_sender}',parse_mode="MarkdownV2" )
         send_message(cid,f'*تعداد {file_num} فایل با موفقیت به مشاور ارسال گردید*',parse_mode='MarkdownV2')
-        delete_file_after_sending(cid)
+        delete_file_after_sending(cid) #پس از ارسال فایلها به مشاور اطلاعات فایلها از دیتابیس حذف مبشود
         user_steps.pop(cid,None)
         info_msg_bot.pop(cid,None)
                
@@ -294,7 +295,7 @@ tg://user?id={cid}""")
         msg=bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
         Mid = msg.message_id
         delete_message(cid,Mid)
-        delete_file_after_sending(cid)
+        delete_file_after_sending(cid) #با لغو مشاوره اطلاعات فایلها از دیتابیس حذف مبشود
         user_steps.pop(cid,None) 
         info_msg_bot.pop(cid,None)
 
@@ -328,7 +329,7 @@ def calculate_insurance_handler(message):
     if not user_exist(cid): return
     if is_spam_user(cid ,mtime): return
     insert_user_data(cid,name,username,mtime)
-    send_question_n_options(cid,1)       
+    send_question_n_options(cid,1)    #ارسال اولین سوال و گزینه های مرتبط با آن با فشردن دکمه تعیین ضریب   
 
 @bot.message_handler(func=lambda m: m.text == texts['contact_us'])
 def contact_us_handler(message):
@@ -386,5 +387,7 @@ def echo_message(message):
     
 if __name__ == "__main__":
     logging.critical('Program started')
+    threading.Thread(target = worker).start()
+    logging.info('spam user updated by worker')
     bot.infinity_polling()
     logging.critical('Program ended')

@@ -24,14 +24,14 @@ def check_is_spam(cid):
     return result['IS_SPAM']
     
 
-# def spam_list():
-#     conn = mysql.connector.MySQLConnection(**db_config)
-#     cur = conn.cursor(dictionary=True)
-#     cur.execute( "SELECT * FROM USERS WHERE IS_SPAM = True")
-#     result = cur.fetchall()
-#     cur.close()
-#     conn.close()
-#     return result
+def spam_list():
+    conn = mysql.connector.MySQLConnection(**db_config)
+    cur = conn.cursor(dictionary=True)
+    cur.execute( "SELECT * FROM USERS WHERE IS_SPAM = True")
+    result = cur.fetchall()
+    cur.close()
+    conn.close()
+    return result
 
 
 def bacK_to_previous(cid):
