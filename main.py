@@ -1,4 +1,4 @@
-#version 1.4.0
+#version 1.4.1
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from telebot.util import antiflood
@@ -10,7 +10,7 @@ from config import *
 from DML import *
 from DQL import *
 
-logging.basicConfig(filename='main.log',
+logging.basicConfig(filename='logs/main.log',
                     level=logging.DEBUG,
                     format="%(asctime)s - %(levelname)s - %(message)s")
 
