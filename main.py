@@ -1,4 +1,4 @@
-#version 1.4.1
+#version 1.4.2
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from telebot.util import antiflood
@@ -9,6 +9,7 @@ from text import texts
 from config import *
 from DML import *
 from DQL import *
+
 
 logging.basicConfig(filename='logs/main.log',
                     level=logging.DEBUG,
@@ -303,6 +304,7 @@ tg://user?id={cid}""")
 def send_welcome(message):
     cid = message.chat.id
     mtime = message.date
+    logging.info(f'user by cid {cid} started the bot')
     if not user_exist(cid): return
     if is_spam_user(cid ,mtime): return
     markup = ReplyKeyboardMarkup(resize_keyboard=True,one_time_keyboard=False)
