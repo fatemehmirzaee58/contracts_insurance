@@ -1,4 +1,4 @@
-#version 1.4.2
+#version 1.4.3
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from telebot.util import antiflood
@@ -62,7 +62,13 @@ def answer_callback_query(*args,**kwargs):
     try:
         return antiflood(bot.answer_callback_query,*args,**kwargs)
     except Exception as e:
-        logging.error(f"Error occured: {repr(e)}",exc_info=True)            
+        logging.error(f"Error occured: {repr(e)}",exc_info=True)   
+
+def copy_message(*args,**kwargs):
+    try:
+        return antiflood(bot.copy_message,*args,**kwargs)
+    except Exception as e:
+        logging.error(f"Error occured: {repr(e)}",exc_info=True)         
         
 def user_exist(cid):  # در این تابع وجود کاربر در دیتابیس بررسی و در صورت عدم وجود ثبت میشود 
     if not user_in_database(cid):
@@ -168,7 +174,7 @@ def send_files_to_consultant(cid,markup):   #  در صورتیکه بیش از �
         msg = send_message(cid,f"ارسال فایل/فایلها و ارتباط با مشاور: {clean_word(texts['consultant_link'])}",
                            parse_mode="MarkdownV2",reply_markup=markup)
         mid = msg.message_id
-        info_msg_bot[cid].append(mid)
+        info_msg_bot[cid]=[mid]
                 
              
 @bot.callback_query_handler(func=lambda call:True)
@@ -271,15 +277,15 @@ tg://user?id={cid}""")
         edit_message_text('پشتیبانی یا مشاوره؟',cid,mid,reply_markup =markup)
         
     elif data == 'confirm_send': 
-        answer_callback_query(call_id,"تایید ارسال فایل")
+        answer_callback_query(call_id,"تایید و ارسال فایل")
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton(f"تایید و ارسال✔️", callback_data='nothing'))
-        edit_message_reply_markup(cid, mid, reply_markup=markup)
+        msg = edit_message_reply_markup(cid, mid, reply_markup=markup)
         link_sender =f'contact [sender](tg://user?id={cid})'
-        result=get_file_info(cid)   
+        result = get_file_info(cid)   
         file_num = len(result)
         for info in result:
-            bot.copy_message(SUPPORT_CID,cid,info['MID'],
+            copy_message(SUPPORT_CID,cid,info['MID'],
                 caption=f' فایل ارسال شده جهت مشاوره از سوی کاربر{link_sender}',parse_mode="MarkdownV2" )
         send_message(cid,f'*تعداد {file_num} فایل با موفقیت به مشاور ارسال گردید*',parse_mode='MarkdownV2')
         delete_file_after_sending(cid) #پس از ارسال فایلها به مشاور اطلاعات فایلها از دیتابیس حذف مبشود
@@ -290,14 +296,16 @@ tg://user?id={cid}""")
         answer_callback_query(call_id, 'فاقد عملیات!')
         
     elif data == 'cancel_send':
-        answer_callback_query(call_id, 'لغو مشاوره')
+        answer_callback_query(call_id, 'حذف فایل و لغو مشاوره✅')
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton(f"لغو مشاوره✔️", callback_data='nothing'))
-        msg=bot.edit_message_reply_markup(cid, mid, reply_markup=markup)
+        markup.add(InlineKeyboardButton(f"  حذف فایل و لغو مشاوره ✔️", callback_data='nothing'))
+        msg = edit_message_reply_markup(cid, mid, reply_markup=markup)
         Mid = msg.message_id
-        delete_message(cid,Mid)
+        res = get_file_info (cid)   
+        for info in res:
+            delete_message(cid,info['MID'])
         delete_file_after_sending(cid) #با لغو مشاوره اطلاعات فایلها از دیتابیس حذف مبشود
-        user_steps.pop(cid,None) 
+        delete_message(cid,Mid)
         info_msg_bot.pop(cid,None)
 
 @bot.message_handler(commands=['start'])
@@ -368,7 +376,7 @@ def file_handler(message):
     if user_steps.get(cid) == 'A':
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("تایید و ارسال", callback_data="confirm_send"),
-                InlineKeyboardButton("لغو مشاوره", callback_data="cancel_send"))
+                InlineKeyboardButton(" حذف فایل و لغو مشاوره", callback_data="cancel_send"))
         
         if message.content_type == 'document':
             file_id = message.document.file_id

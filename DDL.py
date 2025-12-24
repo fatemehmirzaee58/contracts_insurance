@@ -2,7 +2,7 @@ import mysql.connector
 import logging
 from config import db_config
 
-logging.basicConfig(filename='ddl.log',
+logging.basicConfig(filename='logs/ddl.log',
                     level=logging.DEBUG,
                     format="%(asctime)s - %(levelname)s - %(message)s")
 
